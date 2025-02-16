@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">WashWise</string>
+    <string name="take_photo">Take Photo</string>
 </resources>
