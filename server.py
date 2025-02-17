@@ -1,29 +1,30 @@
 
-import socket
 import cv2
 import pytesseract
 from PIL import Image
 from transformers import pipeline
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from flask import request, Flask
 
 pytesseract.pytesseract.tesseract_cmd = r'C:/Program Files/Tesseract-OCR/tesseract.exe'
 HOST = "127.0.0.1"
 PORT = 3222
 
-def run_socket_server():
+app = Flask(__name__)
+ 
+# decorator to associate 
+# a function with the url
+@app.route("/")
+def showHomePage():
+      # response from the server
+    return "This is home page"
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind((HOST, PORT))
-        s.listen()
-        conn, addr = s.accept()
-        with conn:
-            print(f"connected by {addr}")
-            while True:
-                data = conn.recv(1024)
-                if not data:
-                    break
-                conn.sendall(data)
-
+@app.route("/debug", methods=["POST"])
+def debug():
+    text = request.form["sample"]
+    print(text)
+    return "received" 
+   
 def read_image(src):
     image = cv2.imread(src)
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -59,35 +60,56 @@ def read_image(src):
 
     
 def run_analysis(text):
-    prompt = """You will act as a professional clothing designer.
-        based on the information tag given please provide a short analysis on this peice of clothing.
-        ``` """ + text +" ```"
-    device = 'cpu'
+
     # pipe = pipeline('text-generation', model='EleutherAI/gpt-neo-125M')
     
-    message = [
-        {"role":"user", "content": prompt}
+    prompt = """
+            based on the information tag given on the clothing please answer the following questions
+            
+            Is this piece of clothing easy to wash?
+
+            Is this piece of clothing environmentally friendly?
+            
+            The following text enclosed in ``` is the clothing tag details: \n
+        ```\n""" + text +"\n```"
+
+    model_name = "Qwen/Qwen2.5-0.5B-Instruct"
+
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype="auto",
+        device_map="auto"
+    )
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+    messages = [
+        {"role": "system", "content": "You are a professional fashion specialist that focuses on clothing materials"},
+        {"role": "user", "content": prompt}
+    ]
+    text = tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True
+    )
+    model_inputs = tokenizer([text], return_tensors="pt").to(model.device)
+
+    generated_ids = model.generate(
+        **model_inputs,
+        max_new_tokens=1024
+    )
+    generated_ids = [
+        output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
     ]
 
-    # analysis = pipe(prompt,do_sample=True, min_length=100, max_length=1000)
+    response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
 
-    tokenizer = AutoTokenizer.from_pretrained("facebook/MobileLLM-125M", use_fast=False)
-    model = AutoModelForCausalLM.from_pretrained("facebook/MobileLLM-125M", trust_remote_code=True)
-
-    inputs = tokenizer(prompt, return_tensors="pt").to(device)
-    # pipe = pipeline("text-generation", model="facebook/MobileLLM-125M", trust_remote_code=True)
-    analysis = model.generate(**inputs, min_length = 100, max_length=300, do_sample=True, temperature=0.6, top_p=0.95, repetition_penalty=1.2)
-    print(analysis)
-    return analysis
+    return response
 
 def write_analysis_to_text(text):
     with open("a.txt", "w") as f:
         f.write(text)
 
 if __name__ == "__main__":
-
-    # text2 = read_image("./test/example2.jpg")
-    # print(text)
 
     text2 = """BODY: 78% GOTTON, 22%
 POLYESTER
@@ -102,3 +124,5 @@ CORPS: TE% COTON, 22%
     out = run_analysis(text2)
 
     write_analysis_to_text(out)
+
+    # app.run(host="0.0.0.0")

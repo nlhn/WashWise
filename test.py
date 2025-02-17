@@ -3,26 +3,13 @@ import time
 import torch
 device = "cpu"  # for GPU usage or "cpu" for CPU usage
 
-# tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/cosmo-1b")
-# model = AutoModelForCausalLM.from_pretrained("HuggingFaceTB/cosmo-1b").to(device)
-# prompt = "Photosynthesis is"
-
-# inputs = tokenizer(prompt, return_tensors="pt").to(device)
-
-# start = time.time()
-# output = model.generate(**inputs, max_length=300, do_sample=True, temperature=0.6, top_p=0.95, repetition_penalty=1.2)
-# print(tokenizer.decode(output[0]))
-# end = time.time()
-
-# print("time passed: " + str((end - start)))
-
 text = """BODY: 78% GOTTON, 22%
 POLYESTER
 SIDE PANELS & RUB TRIM: 975,
 COTTON, 3% ELASTANE
 CORPS: TE% COTON, 22%"""
 
-prompt = """You will act as a professional clothing designer.
+prompt = """
         based on the information tag given on the clothing please answer the following questions
         
         Is this piece of clothing easy to wash?
@@ -31,18 +18,38 @@ prompt = """You will act as a professional clothing designer.
         
         The following text enclosed in ``` is the clothing tag details: \n
         ```\n""" + text +"\n```"
-# Use a pipeline as a high-level helper
-from transformers import pipeline 
+
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+model_name = "Qwen/Qwen2.5-0.5B-Instruct"
+
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    torch_dtype="auto",
+    device_map="auto"
+)
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+messages = [
+    {"role": "system", "content": "You are a professional fashion specialist that focuses on clothing materials"},
+    {"role": "user", "content": prompt}
+]
+text = tokenizer.apply_chat_template(
+    messages,
+    tokenize=False,
+    add_generation_prompt=True
+)
+model_inputs = tokenizer([text], return_tensors="pt").to(model.device)
+
+generated_ids = model.generate(
+    **model_inputs,
+    max_new_tokens=1024
+)
+generated_ids = [
+    output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
+]
+
+response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
 
 
-start = time.time()
-tokenizer = AutoTokenizer.from_pretrained("facebook/MobileLLM-125M", use_fast=False)
-model = AutoModelForCausalLM.from_pretrained("facebook/MobileLLM-125M", trust_remote_code=True)
 
-inputs = tokenizer(prompt, return_tensors="pt").to(device)
-# pipe = pipeline("text-generation", model="facebook/MobileLLM-125M", trust_remote_code=True)
-out = model.generate(**inputs, min_length = 100, max_length=500, do_sample=True, temperature=0.6, top_p=0.95, repetition_penalty=1.2)
-print(tokenizer.decode(out[0]))
-end = time.time()
-
-print("time passed: " + str((end - start)))
